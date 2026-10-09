@@ -1,8 +1,11 @@
 """pytest entry point: test gates, Hugging Face handling, Windows skips and shared fixtures."""
 
-from collections.abc import Generator
+from collections.abc import Callable, Generator, Iterator
+from contextlib import AbstractContextManager, contextmanager
 
 import pytest
+from inspect_ai.model import Model
+from inspect_ai.model._model import init_model_roles  # no public API available
 
 from pytest_inspect_evals._hf import (
     hf_apply_collection_markers,
@@ -12,6 +15,9 @@ from pytest_inspect_evals._hf import (
 )
 from pytest_inspect_evals._windows import windows_skip_unsupported_tests
 from pytest_inspect_evals.gates import GATES, skip_if_marker_present
+from pytest_inspect_evals.sandbox import mock_docker_sandbox
+
+__all__ = ["mock_docker_sandbox", "model_roles", "set_model_roles"]
 
 FIXED_MARKERS: tuple[tuple[str, str], ...] = (
     (
@@ -72,3 +78,35 @@ def pytest_runtest_makereport(
     report = yield
     hf_convert_gated_failure_to_skip(item, call, report)
     return report
+
+
+@contextmanager
+def model_roles(**roles: Model) -> Iterator[None]:
+    """Set model roles for the duration of the block.
+
+    Usage::
+
+        with model_roles(grader=my_mock_model):
+            score = await scorer_fn(state, target)
+    """
+    # init_model_roles takes dict[str, Model | list[Model]] and dict is
+    # invariant, so the **roles dict[str, Model] needs widening to match.
+    widened: dict[str, Model | list[Model]] = dict(roles)
+    init_model_roles(widened)
+    try:
+        yield
+    finally:
+        init_model_roles({})
+
+
+@pytest.fixture
+def set_model_roles() -> Callable[..., AbstractContextManager[None]]:
+    """Return a context manager that sets model roles.
+
+    Usage::
+
+        def test_something(set_model_roles):
+            with set_model_roles(grader=my_model):
+                score = scorer_fn(state, target)
+    """
+    return model_roles
