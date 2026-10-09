@@ -93,5 +93,5 @@ def skip_if_marker_present(
         return
     skip_mark = pytest.mark.skip(reason=reason)
     for item in items:
-        if marker in item.keywords:
+        if item.get_closest_marker(marker) is not None:
             item.add_marker(skip_mark)

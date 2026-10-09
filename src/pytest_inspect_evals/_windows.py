@@ -11,13 +11,13 @@ def windows_skip_unsupported_tests(items: list[pytest.Item], platform: str | Non
         return
 
     for item in items:
-        if "posix_only" in item.keywords:
+        if item.get_closest_marker("posix_only") is not None:
             item.add_marker(
                 pytest.mark.skip(
                     reason=f"Skipping {item.name}: test requires POSIX system (not supported on Windows)"
                 )
             )
-        if "docker" in item.keywords:
+        if item.get_closest_marker("docker") is not None:
             item.add_marker(
                 pytest.mark.skip(
                     reason=f"Skipping {item.name}: Docker tests are not supported on Windows CI"

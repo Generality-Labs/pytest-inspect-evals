@@ -23,7 +23,7 @@ def hf_configure_logging() -> None:
 
 
 def hf_apply_collection_markers(items: list[pytest.Item]) -> None:
-    hf_items = [item for item in items if "huggingface" in item.keywords]
+    hf_items = [item for item in items if item.get_closest_marker("huggingface") is not None]
 
     if not hf_items:
         return
@@ -43,7 +43,7 @@ def _is_hf_gated_dataset_failure(
     return (
         report.when == "call"
         and report.failed
-        and "huggingface" in item.keywords
+        and item.get_closest_marker("huggingface") is not None
         and bool(call.excinfo)
         and is_gated_dataset_exception(call.excinfo.value)  # type: ignore
     )

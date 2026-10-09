@@ -35,3 +35,20 @@ def test_nothing_skipped_elsewhere(pytester: pytest.Pytester, platform: str) -> 
     items, _ = pytester.inline_genitems()
     windows_skip_unsupported_tests(items, platform=platform)
     assert _skipped(items) == set()
+
+
+def test_param_id_matching_a_marker_name_is_not_skipped_on_windows(
+    pytester: pytest.Pytester,
+) -> None:
+    pytester.makepyfile(
+        """
+        import pytest
+
+        @pytest.mark.parametrize("kind", ["docker", "posix_only"])
+        def test_param(kind):
+            pass
+        """
+    )
+    items, _ = pytester.inline_genitems()
+    windows_skip_unsupported_tests(items, platform="win32")
+    assert _skipped(items) == set()

@@ -27,9 +27,7 @@ def _clear_gate_env(monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.delenv(env_var, raising=False)
 
 
-# Ids are prefixed because pytest puts parametrize ids into item.keywords, and the
-# gates match keywords: an id of exactly "slow" would gate this test itself.
-@pytest.fixture(params=GATES, ids=[f"gate-{g[0]}" for g in GATES])
+@pytest.fixture(params=GATES, ids=[g[0] for g in GATES])
 def gate(request: pytest.FixtureRequest, pytester: pytest.Pytester) -> tuple[str, str, str, str]:
     marker = request.param[0]
     pytester.makepyfile(GATED_TEST.format(marker=marker))
@@ -181,3 +179,19 @@ def test_public_helper_gates_a_repo_marker(
     pytester.runpytest("--custom-smoke").assert_outcomes(passed=1)
     monkeypatch.setenv("RUN_CUSTOM_SMOKE_TESTS", "1")
     pytester.runpytest().assert_outcomes(passed=1)
+
+
+def test_param_id_matching_a_marker_name_is_not_gated(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+    pytester.makepyfile(
+        """
+        import pytest
+
+        @pytest.mark.parametrize("kind", ["slow", "dataset_download", "k8s", "gpu", "huggingface"])
+        def test_param(kind):
+            pass
+        """
+    )
+    pytester.runpytest().assert_outcomes(passed=5)
