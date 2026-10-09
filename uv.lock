@@ -2536,13 +2536,13 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "datasets", marker = "extra == 'huggingface'", specifier = ">=4.8.5" },
-    { name = "inspect-ai", specifier = ">=0.3.261" },
-    { name = "numpy" },
+    { name = "inspect-ai", specifier = ">=0.3.262" },
+    { name = "numpy", specifier = ">=1.26.0" },
     { name = "pydantic", specifier = ">=2.10.0" },
     { name = "pytest", specifier = ">=8.0" },
     { name = "pytest-rerunfailures", specifier = ">=15" },
     { name = "requests", specifier = ">=2.32.0" },
-    { name = "urllib3" },
+    { name = "urllib3", specifier = ">=2.0" },
 ]
 provides-extras = ["huggingface"]
 
@@ -2554,7 +2554,7 @@ dev = [
     { name = "mdformat-gfm", specifier = ">=1.0.0" },
     { name = "pre-commit", specifier = ">=4.0.0" },
     { name = "pytest", specifier = ">=8.0.0" },
-    { name = "pytest-asyncio" },
+    { name = "pytest-asyncio", specifier = ">=1.0" },
     { name = "pytest-cov", specifier = ">=7.0.0" },
     { name = "scriv", specifier = ">=1.8" },
 ]

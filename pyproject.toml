@@ -16,13 +16,13 @@ authors = [{ name = "Matt Fisher", email = "m@ttfisher.com" }]
 requires-python = ">=3.11"
 classifiers = ["Framework :: Pytest"]
 dependencies = [
-    "inspect_ai>=0.3.261",
-    "numpy",
+    "inspect_ai>=0.3.262",
+    "numpy>=1.26.0",
     "pydantic>=2.10.0",
     "pytest>=8.0",
     "pytest-rerunfailures>=15",
     "requests>=2.32.0",
-    "urllib3",
+    "urllib3>=2.0",
 ]
 
 [project.optional-dependencies]
@@ -44,7 +44,7 @@ dev = [
     "pre-commit>=4.0.0",
     "scriv>=1.8",
     "datasets>=4.8.5",
-    "pytest-asyncio",
+    "pytest-asyncio>=1.0",
     "mdformat>=1.0.0",
     "mdformat-gfm>=1.0.0",
 ]
@@ -121,3 +121,7 @@ testpaths = ["tests"]
 addopts = "-rA --durations=10 --color=yes --cov=src --cov-report=term-missing"
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+filterwarnings = [
+    # pytester's throwaway test dirs have no pytest-asyncio config of their own.
+    'ignore:The configuration option "asyncio_default_fixture_loop_scope" is unset:pytest.PytestDeprecationWarning',
+]
