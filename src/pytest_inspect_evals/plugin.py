@@ -1,7 +1,16 @@
 """pytest entry point: test gates, Hugging Face handling, Windows skips and shared fixtures."""
 
+from collections.abc import Generator
+
 import pytest
 
+from pytest_inspect_evals._hf import (
+    hf_apply_collection_markers,
+    hf_configure_logging,
+    hf_convert_gated_failure_to_skip,
+    hf_disable_tokenizer_parallelism,
+)
+from pytest_inspect_evals._windows import windows_skip_unsupported_tests
 from pytest_inspect_evals.gates import GATES, skip_if_marker_present
 
 FIXED_MARKERS: tuple[tuple[str, str], ...] = (
@@ -36,6 +45,8 @@ def pytest_configure(config: pytest.Config) -> None:
         config.addinivalue_line("markers", f"{gate.marker}: {gate.description}")
     for name, description in FIXED_MARKERS:
         config.addinivalue_line("markers", f"{name}: {description}")
+    hf_disable_tokenizer_parallelism()
+    hf_configure_logging()
 
 
 @pytest.hookimpl(tryfirst=True)
@@ -50,3 +61,14 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
             reason=gate.reason,
             ini_option=gate.ini_option,
         )
+    windows_skip_unsupported_tests(items)
+    hf_apply_collection_markers(items)
+
+
+@pytest.hookimpl(wrapper=True)
+def pytest_runtest_makereport(
+    item: pytest.Item, call: pytest.CallInfo[None]
+) -> Generator[None, pytest.TestReport, pytest.TestReport]:
+    report = yield
+    hf_convert_gated_failure_to_skip(item, call, report)
+    return report
