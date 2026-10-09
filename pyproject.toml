@@ -7,7 +7,7 @@ build-backend = "uv_build"
 
 [project]
 name = "pytest-inspect-evals"
-version = "0.0.0"
+version = "0.1.0"
 description = "pytest plugin with shared test gates, fixtures and helpers for Inspect AI evaluations"
 readme = "README.md"
 license = "MIT"
