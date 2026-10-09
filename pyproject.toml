@@ -1,0 +1,123 @@
+[build-system]
+# uv's own backend. It builds src/pytest_inspect_evals/ with no further config.
+# Keep the upper bound at the next uv minor, as `uv init` writes it, and raise
+# both bounds when moving to a new uv minor.
+requires = ["uv_build>=0.12.22,<0.13.0"]
+build-backend = "uv_build"
+
+[project]
+name = "pytest-inspect-evals"
+version = "0.0.0"
+description = "pytest plugin with shared test gates, fixtures and helpers for Inspect AI evaluations"
+readme = "README.md"
+license = "MIT"
+license-files = ["LICENSE"] # uv_build ships only the license files named here
+authors = [{ name = "Matt Fisher", email = "m@ttfisher.com" }]
+requires-python = ">=3.11"
+classifiers = ["Framework :: Pytest"]
+dependencies = [
+    "inspect_ai>=0.3.261",
+    "numpy",
+    "pydantic>=2.10.0",
+    "pytest>=8.0",
+    "pytest-rerunfailures>=15",
+    "requests>=2.32.0",
+    "urllib3",
+]
+
+[project.optional-dependencies]
+# Only pytest_inspect_evals.huggingface needs this.
+huggingface = ["datasets>=4.8.5"]
+
+[project.entry-points.pytest11]
+pytest_inspect_evals = "pytest_inspect_evals.plugin"
+
+[project.urls]
+Homepage = "https://github.com/Generality-Labs/pytest-inspect-evals"
+Repository = "https://github.com/Generality-Labs/pytest-inspect-evals"
+Issues = "https://github.com/Generality-Labs/pytest-inspect-evals/issues"
+[dependency-groups]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=7.0.0",
+    "basedpyright>=1.39",
+    "pre-commit>=4.0.0",
+    "scriv>=1.8",
+    "datasets>=4.8.5",
+    "pytest-asyncio",
+    "mdformat>=1.0.0",
+    "mdformat-gfm>=1.0.0",
+]
+
+
+[tool.scriv]
+# One fragment per pull request in changelog.d/, collected into CHANGELOG.md
+# at release time, so concurrent PRs never edit the same lines of the changelog.
+format = "md"
+fragment_directory = "changelog.d"
+categories = ["Added", "Changed", "Deprecated", "Removed", "Fixed", "Security"]
+skip_fragments = "[A-Z]*" # TEMPLATE.md
+new_fragment_template = "file: TEMPLATE.md"
+entry_title_template = "[{{ version }}] - {{ date.strftime('%Y-%m-%d') }}"
+md_header_level = "2"
+md_html_anchors = false
+# Without this, two fragments in one category leave a blank line between them,
+# which makes the list loose and fails mdformat on the release commit.
+compact_fragments = true
+# The version's single source is [project] version above, which
+# `uv version --bump` (and the Prepare release workflow) rewrites.
+version = "literal: pyproject.toml: project.version"
+
+[tool.ruff]
+line-length = 100
+src = ["src"]
+target-version = "py311"
+
+[tool.ruff.lint]
+select = [
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "F",     # pyflakes
+    "I",     # isort
+    "UP",    # pyupgrade
+    "B",     # flake8-bugbear
+    "SIM",   # flake8-simplify
+    "D",     # pydocstyle
+    "C4",    # flake8-comprehensions
+    "PT",    # flake8-pytest-style
+    "PIE",   # flake8-pie
+    "DTZ",   # flake8-datetimez (timezone-aware datetimes)
+    "ISC",   # implicit-str-concat (catches missing commas)
+    "ASYNC", # flake8-async
+    "N",     # pep8-naming
+    "FURB",  # refurb (modernization)
+    "RUF",   # ruff-specific rules
+    "PLE",   # pylint errors
+    "PLW",   # pylint warnings
+]
+ignore = [
+    "E501",   # line-too-long — the formatter owns line length
+    "D10",    # missing docstrings — don't force them
+    "D415",   # first-line punctuation — the module docstring is the project
+    # description, whose punctuation varies
+    "ISC001", # single-line implicit concat — conflicts with the formatter
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["D"] # tests don't need docstring linting
+
+[tool.basedpyright]
+pythonVersion = "3.11"
+# "standard", not "strict": v0.1 moves code verbatim from inspect_evals, which
+# was checked with mypy. Tighten once the code is ours.
+typeCheckingMode = "standard"
+reportMissingTypeStubs = false # third-party libs are often untyped
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-rA --durations=10 --color=yes --cov=src --cov-report=term-missing"
+asyncio_mode = "auto"
+asyncio_default_fixture_loop_scope = "function"

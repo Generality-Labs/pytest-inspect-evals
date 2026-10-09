@@ -1,0 +1,19 @@
+# This file is auto-generated and updated by Copier; do not edit by hand.
+# Run `uvx copier update --trust` to pull in template changes.
+_commit: v1.10.1
+_src_path: gh:Generality-Labs/python-project-template
+author_email: m@ttfisher.com
+author_name: Matt Fisher
+github_owner: Generality-Labs
+license: MIT
+project_description: pytest plugin with shared test gates, fixtures and helpers for
+    Inspect AI evaluations
+project_kind: library
+project_name: pytest-inspect-evals
+publish_to_pypi: true
+python_version: '3.11'
+use_coverage_gate: false
+use_frontend: false
+use_repo_settings: false
+use_template_update: true
+use_typos: true
