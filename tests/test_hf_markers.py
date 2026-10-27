@@ -84,3 +84,57 @@ def test_plugin_loads_without_datasets(
     monkeypatch.delenv("HF_TOKEN", raising=False)
     pytester.makepyfile(HF_TEST)
     pytester.runpytest().assert_outcomes(skipped=1)
+
+
+def test_strict_without_token_errors(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+    monkeypatch.delenv("REQUIRE_HF_ACCESS", raising=False)
+    pytester.makepyfile(HF_TEST)
+    result = pytester.runpytest("--require-hf-access")
+    assert result.ret == pytest.ExitCode.USAGE_ERROR
+    result.stderr.fnmatch_lines(["*REQUIRE_HF_ACCESS*HF_TOKEN*"])
+
+
+def test_strict_env_var_without_token_errors(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+    monkeypatch.setenv("REQUIRE_HF_ACCESS", "1")
+    pytester.makepyfile(HF_TEST)
+    result = pytester.runpytest()
+    assert result.ret == pytest.ExitCode.USAGE_ERROR
+    result.stderr.fnmatch_lines(["*REQUIRE_HF_ACCESS*HF_TOKEN*"])
+
+
+def test_strict_ini_without_token_errors(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+    monkeypatch.delenv("REQUIRE_HF_ACCESS", raising=False)
+    pytester.makeini("[pytest]\nrequire_hf_access = true\n")
+    pytester.makepyfile(HF_TEST)
+    result = pytester.runpytest()
+    assert result.ret == pytest.ExitCode.USAGE_ERROR
+    result.stderr.fnmatch_lines(["*REQUIRE_HF_ACCESS*HF_TOKEN*"])
+
+
+def test_strict_env_zero_overrides_flag(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+    monkeypatch.setenv("REQUIRE_HF_ACCESS", "0")
+    pytester.makepyfile(HF_TEST)
+    result = pytester.runpytest("--require-hf-access")
+    result.assert_outcomes(skipped=1)
+
+
+def test_strict_without_token_and_no_hf_tests_runs(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+    monkeypatch.delenv("REQUIRE_HF_ACCESS", raising=False)
+    pytester.makepyfile("def test_plain():\n    pass\n")
+    result = pytester.runpytest("--require-hf-access")
+    result.assert_outcomes(passed=1)

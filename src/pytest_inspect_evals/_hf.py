@@ -5,6 +5,12 @@ from importlib.util import find_spec
 
 import pytest
 
+from pytest_inspect_evals.gates import truthy
+
+REQUIRE_HF_ACCESS_FLAG = "--require-hf-access"
+REQUIRE_HF_ACCESS_ENV = "REQUIRE_HF_ACCESS"
+REQUIRE_HF_ACCESS_INI = "require_hf_access"
+
 
 def hf_disable_tokenizer_parallelism() -> None:
     """Disable HF tokenizers parallelism to avoid segfaults."""
@@ -22,13 +28,32 @@ def hf_configure_logging() -> None:
     huggingface_hub.logging.set_verbosity_info()
 
 
-def hf_apply_collection_markers(items: list[pytest.Item]) -> None:
+def hf_access_required(config: pytest.Config) -> bool:
+    """Return whether strict Hugging Face mode is on.
+
+    Priority: env var (when non-empty), then CLI flag, then ini option.
+    """
+    env_val = os.environ.get(REQUIRE_HF_ACCESS_ENV, "").strip()
+    if env_val:
+        return truthy(env_val)
+    if config.getoption("require_hf_access"):
+        return True
+    return bool(config.getini(REQUIRE_HF_ACCESS_INI))
+
+
+def hf_apply_collection_markers(config: pytest.Config, items: list[pytest.Item]) -> None:
     hf_items = [item for item in items if item.get_closest_marker("huggingface") is not None]
 
     if not hf_items:
         return
 
     if not os.environ.get("HF_TOKEN", "").strip():
+        if hf_access_required(config):
+            raise pytest.UsageError(
+                f"{REQUIRE_HF_ACCESS_ENV} is on and {len(hf_items)} huggingface test(s) "
+                "were collected, but HF_TOKEN is not set. Set HF_TOKEN, or turn strict "
+                "mode off."
+            )
         for item in hf_items:
             item.add_marker(pytest.mark.skip(reason=f"HF_TOKEN not set ({item.name})"))
 

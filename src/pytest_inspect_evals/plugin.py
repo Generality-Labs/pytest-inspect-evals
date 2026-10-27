@@ -8,6 +8,9 @@ from inspect_ai.model import Model
 from inspect_ai.model._model import init_model_roles  # no public API available
 
 from pytest_inspect_evals._hf import (
+    REQUIRE_HF_ACCESS_FLAG,
+    REQUIRE_HF_ACCESS_INI,
+    hf_access_required,
     hf_apply_collection_markers,
     hf_configure_logging,
     hf_convert_gated_failure_to_skip,
@@ -17,7 +20,7 @@ from pytest_inspect_evals._windows import windows_skip_unsupported_tests
 from pytest_inspect_evals.gates import GATES, skip_if_marker_present
 from pytest_inspect_evals.sandbox import mock_docker_sandbox
 
-__all__ = ["mock_docker_sandbox", "model_roles", "set_model_roles"]
+__all__ = ["hf_access_required", "mock_docker_sandbox", "model_roles", "set_model_roles"]
 
 FIXED_MARKERS: tuple[tuple[str, str], ...] = (
     (
@@ -44,6 +47,19 @@ def pytest_addoption(parser: pytest.Parser) -> None:
             default=False,
             help=f"run tests marked {gate.marker} by default in this repo",
         )
+    group.addoption(
+        REQUIRE_HF_ACCESS_FLAG,
+        action="store_true",
+        default=False,
+        help="fail instead of skipping huggingface tests when HF_TOKEN is missing "
+        "(or set REQUIRE_HF_ACCESS=1)",
+    )
+    parser.addini(
+        REQUIRE_HF_ACCESS_INI,
+        type="bool",
+        default=False,
+        help="require Hugging Face access for huggingface tests by default in this repo",
+    )
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -68,7 +84,7 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
             ini_option=gate.ini_option,
         )
     windows_skip_unsupported_tests(items)
-    hf_apply_collection_markers(items)
+    hf_apply_collection_markers(config, items)
 
 
 @pytest.hookimpl(wrapper=True)
