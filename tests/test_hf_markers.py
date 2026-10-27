@@ -1,3 +1,5 @@
+import time
+
 import pytest
 
 from pytest_inspect_evals import _hf
@@ -249,11 +251,30 @@ def test_strict_summary_under_xdist(
     )
 
 
-def test_gated_errors_not_rerun(pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_gated_skips_with_reruns_enabled(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # In default mode gated failures become skips before pytest-rerunfailures sees
+    # them, so this does not test rerun_except. See the strict-mode test below.
     monkeypatch.setenv("HF_TOKEN", "dummy")
     monkeypatch.delenv("REQUIRE_HF_ACCESS", raising=False)
-    pytester.makeconftest("import time\ntime.sleep = lambda seconds: None\n")
+    # Patch time.sleep to avoid the 60 second delay between reruns.
+    monkeypatch.setattr(time, "sleep", lambda seconds: None)
     pytester.makepyfile(GATED_FAILURE)
     result = pytester.runpytest()
     result.assert_outcomes(skipped=2, failed=2)
+    assert result.parseoutcomes()["rerun"] == 2
+
+
+def test_strict_gated_errors_not_rerun(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HF_TOKEN", "dummy")
+    monkeypatch.delenv("REQUIRE_HF_ACCESS", raising=False)
+    # Patch time.sleep to avoid the 60 second delay between reruns.
+    monkeypatch.setattr(time, "sleep", lambda seconds: None)
+    pytester.makepyfile(GATED_FAILURE)
+    result = pytester.runpytest("--require-hf-access")
+    # Only test_real_failure is rerun. The unmarked test has no flaky marker.
+    result.assert_outcomes(failed=4)
     assert result.parseoutcomes()["rerun"] == 2
