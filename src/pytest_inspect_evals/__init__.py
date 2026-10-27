@@ -8,3 +8,7 @@ try:
     __version__ = version("pytest-inspect-evals")
 except PackageNotFoundError:  # a source tree that was never installed
     __version__ = "unknown"
+
+from pytest_inspect_evals._hf import hf_access_required
+
+__all__ = ["hf_access_required"]

@@ -8,21 +8,28 @@ from inspect_ai.model import Model
 from inspect_ai.model._model import init_model_roles  # no public API available
 
 from pytest_inspect_evals._hf import (
+    HF_ACCESS_DENIED_KEY,
+    HF_TERMS_URL,
+    REQUIRE_HF_ACCESS_FLAG,
+    REQUIRE_HF_ACCESS_INI,
+    hf_access_required,
     hf_apply_collection_markers,
     hf_configure_logging,
     hf_convert_gated_failure_to_skip,
     hf_disable_tokenizer_parallelism,
+    hf_fail_if_token_missing,
 )
 from pytest_inspect_evals._windows import windows_skip_unsupported_tests
 from pytest_inspect_evals.gates import GATES, skip_if_marker_present
 from pytest_inspect_evals.sandbox import mock_docker_sandbox
 
-__all__ = ["mock_docker_sandbox", "model_roles", "set_model_roles"]
+__all__ = ["hf_access_required", "mock_docker_sandbox", "model_roles", "set_model_roles"]
 
 FIXED_MARKERS: tuple[tuple[str, str], ...] = (
     (
         "huggingface",
-        "marks tests that use the Hugging Face Hub; skipped without HF_TOKEN, otherwise retried twice",
+        "marks tests that use the Hugging Face Hub; skipped without HF_TOKEN, otherwise "
+        "retried twice; strict mode (--require-hf-access) fails them instead of skipping",
     ),
     ("docker", "marks tests that pull or build docker images; skipped on Windows"),
     ("posix_only", "marks tests that require POSIX systems (Linux/macOS); skipped on Windows"),
@@ -44,6 +51,19 @@ def pytest_addoption(parser: pytest.Parser) -> None:
             default=False,
             help=f"run tests marked {gate.marker} by default in this repo",
         )
+    group.addoption(
+        REQUIRE_HF_ACCESS_FLAG,
+        action="store_true",
+        default=False,
+        help="fail on gated-dataset errors and error when HF_TOKEN is missing "
+        "(or set REQUIRE_HF_ACCESS=1)",
+    )
+    parser.addini(
+        REQUIRE_HF_ACCESS_INI,
+        type="bool",
+        default=False,
+        help="require Hugging Face access for huggingface tests by default in this repo",
+    )
 
 
 def pytest_configure(config: pytest.Config) -> None:
@@ -51,6 +71,7 @@ def pytest_configure(config: pytest.Config) -> None:
         config.addinivalue_line("markers", f"{gate.marker}: {gate.description}")
     for name, description in FIXED_MARKERS:
         config.addinivalue_line("markers", f"{name}: {description}")
+    config.pluginmanager.register(_HfDeniedCollector(), "inspect_evals_hf_denied")
     hf_disable_tokenizer_parallelism()
     hf_configure_logging()
 
@@ -68,7 +89,11 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
             ini_option=gate.ini_option,
         )
     windows_skip_unsupported_tests(items)
-    hf_apply_collection_markers(items)
+    hf_apply_collection_markers(config, items)
+
+
+def pytest_runtest_setup(item: pytest.Item) -> None:
+    hf_fail_if_token_missing(item)
 
 
 @pytest.hookimpl(wrapper=True)
@@ -78,6 +103,33 @@ def pytest_runtest_makereport(
     report = yield
     hf_convert_gated_failure_to_skip(item, call, report)
     return report
+
+
+class _HfDeniedCollector:
+    """Collect denied dataset ids from reports and print them in the terminal summary.
+
+    Reports are seen in pytest_runtest_logreport, which also runs on the xdist
+    controller, so datasets denied on workers are included.
+    """
+
+    def __init__(self) -> None:
+        self.denied: dict[str, str] = {}
+
+    def pytest_runtest_logreport(self, report: pytest.TestReport) -> None:
+        for key, repo_id in report.user_properties:
+            if key == HF_ACCESS_DENIED_KEY:
+                self.denied[report.nodeid] = str(repo_id)
+
+    def pytest_terminal_summary(self, terminalreporter: pytest.TerminalReporter) -> None:
+        if not self.denied:
+            return
+        terminalreporter.section("Hugging Face access denied")
+        lines = {
+            HF_TERMS_URL.format(repo_id=repo_id) if repo_id else f"{node_id} (dataset unknown)"
+            for node_id, repo_id in self.denied.items()
+        }
+        for line in sorted(lines):
+            terminalreporter.write_line(line)
 
 
 @contextmanager

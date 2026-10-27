@@ -34,10 +34,34 @@ inspect_evals_dataset_download = true
 
 Three more markers have fixed behaviour:
 
-- `huggingface`: skipped when `HF_TOKEN` is unset or blank. Otherwise the test is retried up to twice, 60 seconds apart, and a gated-dataset error (`GatedRepoError`, or `DatasetNotFoundError` mentioning a gated dataset) is reported as a skip.
+- `huggingface`: skipped when `HF_TOKEN` is unset or blank. Otherwise the test is retried up to twice, 60 seconds apart, except for a gated-dataset error (`GatedRepoError`, or `DatasetNotFoundError` mentioning a gated dataset), which is not retried and is reported as a skip. See [Gated Hugging Face datasets and strict mode](#gated-hugging-face-datasets-and-strict-mode) to fail on these errors instead.
 - `docker` and `posix_only`: skipped on Windows.
 
 The plugin registers all seven markers, so they work under `--strict-markers` without any config.
+
+## Gated Hugging Face datasets and strict mode
+
+By default, a `huggingface` test is skipped when `HF_TOKEN` is unset, and a gated-dataset error is reported as a skip. This keeps local runs green for contributors who have not accepted a dataset's terms.
+
+Strict mode is for CI jobs that are expected to have access. It is off by default and can be turned on in three ways:
+
+- Environment variable: `REQUIRE_HF_ACCESS=1`
+- Command-line flag: `pytest --require-hf-access`
+- Ini option: `require_hf_access = true` under `[tool.pytest.ini_options]`
+
+A non-empty `REQUIRE_HF_ACCESS` value wins over the flag, and the flag wins over the ini option. For example, `REQUIRE_HF_ACCESS=0` turns strict mode off even when the ini option is true.
+
+In strict mode:
+
+- A gated-dataset error fails the test instead of being skipped.
+- Collecting `huggingface` tests with `HF_TOKEN` unset or blank stops the run with a usage error. Under pytest-xdist, each `huggingface` test fails at setup with the same message instead, because a usage error on a worker would crash the run.
+- The terminal output ends with a "Hugging Face access denied" section that lists the dataset page to visit for each gated dataset, such as `https://huggingface.co/datasets/<repo_id>`. When the repo id is unknown, it lists the test's node id followed by "(dataset unknown)".
+
+CI tooling can find these failures in the report. Each failed report has a `("hf_access_denied", "<repo_id>")` entry in its `user_properties`, and the value is an empty string when the repo id is unknown. `--report-log` writes it to the JSON lines file under `user_properties`.
+
+Gated errors are never retried, in either mode. Other errors are still retried twice, 60 seconds apart.
+
+The dataset viewer helpers in `pytest_inspect_evals.huggingface` check access when the viewer API returns a non-200 response. If the dataset is gated, they raise the Hub's `GatedRepoError`, which is handled as described above. If the dataset is missing or private, they raise `RepositoryNotFoundError`, which is an ordinary failure. For any other non-200 response, or if the access check itself fails, they raise an `AssertionError` as before.
 
 ## Adding your own gate
 

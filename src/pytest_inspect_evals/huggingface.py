@@ -19,6 +19,8 @@ try:
     )
     from datasets.features.features import FeatureType
     from datasets.info import DatasetInfo, DatasetInfosDict, asdict
+    from huggingface_hub import HfApi
+    from huggingface_hub.errors import GatedRepoError, RepositoryNotFoundError
 except ImportError as e:
     raise ImportError(
         "pytest_inspect_evals.huggingface needs the huggingface extra: "
@@ -104,6 +106,20 @@ class HuggingFaceIsValidResponse(BaseModel):
         return any([self.preview, self.viewer, self.search, self.filter, self.statistics])
 
 
+def _raise_for_access(hf_dataset_path: str) -> None:
+    """Raise the Hub's own error if the dataset is gated or not found.
+
+    Called after the dataset-viewer returns a non-200 status. Any other failure of
+    the lookup is ignored so that the caller's AssertionError is raised instead.
+    """
+    try:
+        HfApi().auth_check(hf_dataset_path, repo_type="dataset")
+    except (GatedRepoError, RepositoryNotFoundError):
+        raise
+    except Exception:
+        logger.debug("auth_check failed for %s", hf_dataset_path, exc_info=True)
+
+
 def assert_huggingface_dataset_is_valid(hf_dataset_path: str):
     """Assert that a Hugging Face dataset is valid.
 
@@ -111,11 +127,19 @@ def assert_huggingface_dataset_is_valid(hf_dataset_path: str):
         hf_dataset_path: Path to the Hugging Face dataset.
 
     Raises:
+        GatedRepoError: If the dataset viewer returns a non-200 response and
+            HfApi.auth_check raises GatedRepoError, because the dataset is gated
+            for the current token.
+        RepositoryNotFoundError: If the dataset viewer returns a non-200 response
+            and HfApi.auth_check raises RepositoryNotFoundError, because the dataset
+            is missing or private.
         AssertionError: If the dataset is not valid.
     """
     record_hf_call("assert_huggingface_dataset_is_valid")
     url = f"{HF_DATASETS_SERVER_BASE_URL}/is-valid?dataset={hf_dataset_path}"
     response = get_session().get(url)
+    if response.status_code != 200:
+        _raise_for_access(hf_dataset_path)
     assert response.status_code == 200, (
         f"Hugging Face dataset `/is-valid` returned status code {response.status_code} "
         f"for dataset {hf_dataset_path}. "
@@ -149,11 +173,19 @@ def get_dataset_infos_dict(hf_dataset_path: str) -> DatasetInfosDict:
         DatasetInfosDict: Dictionary of dataset info objects.
 
     Raises:
+        GatedRepoError: If the dataset viewer returns a non-200 response and
+            HfApi.auth_check raises GatedRepoError, because the dataset is gated
+            for the current token.
+        RepositoryNotFoundError: If the dataset viewer returns a non-200 response
+            and HfApi.auth_check raises RepositoryNotFoundError, because the dataset
+            is missing or private.
         AssertionError: If the dataset info cannot be retrieved.
     """
     record_hf_call("get_dataset_infos_dict")
     url = f"{HF_DATASETS_SERVER_BASE_URL}/info?dataset={hf_dataset_path}"
     response = get_session().get(url)
+    if response.status_code != 200:
+        _raise_for_access(hf_dataset_path)
     assert response.status_code == 200, (
         f"Hugging Face dataset `/info` returned status code {response.status_code} "
         f"check documentation at `https://huggingface.co/docs/dataset-viewer/en/info`"
