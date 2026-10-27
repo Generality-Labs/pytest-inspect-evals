@@ -95,8 +95,9 @@ def hf_fail_if_token_missing(item: pytest.Item) -> None:
 def _is_hf_gated_dataset_failure(
     item: pytest.Item, call: pytest.CallInfo, report: pytest.TestReport
 ) -> bool:
+    # Setup covers fixtures that fetch a gated dataset before the test body runs.
     return (
-        report.when == "call"
+        report.when in ("setup", "call")
         and report.failed
         and item.get_closest_marker("huggingface") is not None
         and bool(call.excinfo)

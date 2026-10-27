@@ -41,7 +41,7 @@ The plugin registers all seven markers, so they work under `--strict-markers` wi
 
 ## Gated Hugging Face datasets and strict mode
 
-By default, a `huggingface` test is skipped when `HF_TOKEN` is unset, and a gated-dataset error is reported as a skip. This keeps local runs green for contributors who have not accepted a dataset's terms.
+By default, a `huggingface` test is skipped when `HF_TOKEN` is unset, and a gated-dataset error is reported as a skip. This keeps local runs green for contributors who have not accepted a dataset's terms. This applies whether the error is raised in the test body or in a fixture during setup, for example a module-scoped fixture that fetches dataset info.
 
 Strict mode is for CI jobs that are expected to have access. It is off by default and can be turned on in three ways:
 
@@ -53,7 +53,7 @@ A non-empty `REQUIRE_HF_ACCESS` value wins over the flag, and the flag wins over
 
 In strict mode:
 
-- A gated-dataset error fails the test instead of being skipped.
+- A gated-dataset error fails the test instead of being skipped. An error raised in a fixture is reported as a setup error, with the same tag and summary entry.
 - Collecting `huggingface` tests with `HF_TOKEN` unset or blank stops the run with a usage error. Under pytest-xdist, each `huggingface` test fails at setup with the same message instead, because a usage error on a worker would crash the run.
 - The terminal output ends with a "Hugging Face access denied" section that lists the dataset page to visit for each gated dataset, such as `https://huggingface.co/datasets/<repo_id>`. When the repo id is unknown, it lists the test's node id followed by "(dataset unknown)".
 
