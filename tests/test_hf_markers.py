@@ -199,7 +199,7 @@ def test_strict_gated_error_without_repo_id(
     monkeypatch.delenv("REQUIRE_HF_ACCESS", raising=False)
     pytester.makepyfile(GATED_FAILURE)
     result = pytester.runpytest("-p", "no:rerunfailures", "--require-hf-access")
-    result.stdout.fnmatch_lines(["*test_gated_repo*"])
+    result.stdout.fnmatch_lines(["*::test_gated_repo (dataset unknown)"])
     reports = pytester.inline_run("-p", "no:rerunfailures", "--require-hf-access").getreports(
         "pytest_runtest_logreport"
     )

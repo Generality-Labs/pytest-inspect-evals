@@ -28,7 +28,8 @@ __all__ = ["hf_access_required", "mock_docker_sandbox", "model_roles", "set_mode
 FIXED_MARKERS: tuple[tuple[str, str], ...] = (
     (
         "huggingface",
-        "marks tests that use the Hugging Face Hub; skipped without HF_TOKEN, otherwise retried twice",
+        "marks tests that use the Hugging Face Hub; skipped without HF_TOKEN, otherwise "
+        "retried twice; strict mode (--require-hf-access) fails them instead of skipping",
     ),
     ("docker", "marks tests that pull or build docker images; skipped on Windows"),
     ("posix_only", "marks tests that require POSIX systems (Linux/macOS); skipped on Windows"),
@@ -54,7 +55,7 @@ def pytest_addoption(parser: pytest.Parser) -> None:
         REQUIRE_HF_ACCESS_FLAG,
         action="store_true",
         default=False,
-        help="fail instead of skipping huggingface tests when HF_TOKEN is missing "
+        help="fail on gated-dataset errors and error when HF_TOKEN is missing "
         "(or set REQUIRE_HF_ACCESS=1)",
     )
     parser.addini(
@@ -124,7 +125,7 @@ class _HfDeniedCollector:
             return
         terminalreporter.section("Hugging Face access denied")
         lines = {
-            HF_TERMS_URL.format(repo_id=repo_id) if repo_id else node_id
+            HF_TERMS_URL.format(repo_id=repo_id) if repo_id else f"{node_id} (dataset unknown)"
             for node_id, repo_id in self.denied.items()
         }
         for line in sorted(lines):

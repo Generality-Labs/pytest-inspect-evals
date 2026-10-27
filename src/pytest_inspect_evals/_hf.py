@@ -46,7 +46,7 @@ def hf_access_required(config: pytest.Config) -> bool:
     env_val = os.environ.get(REQUIRE_HF_ACCESS_ENV, "").strip()
     if env_val:
         return truthy(env_val)
-    if config.getoption("require_hf_access"):
+    if config.getoption(REQUIRE_HF_ACCESS_FLAG):
         return True
     return bool(config.getini(REQUIRE_HF_ACCESS_INI))
 
