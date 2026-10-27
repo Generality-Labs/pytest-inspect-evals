@@ -39,6 +39,29 @@ Three more markers have fixed behaviour:
 
 The plugin registers all seven markers, so they work under `--strict-markers` without any config.
 
+## Gated Hugging Face datasets and strict mode
+
+By default, a `huggingface` test is skipped when `HF_TOKEN` is unset, and a gated-dataset error is reported as a skip. This keeps local runs green for contributors who have not accepted a dataset's terms.
+
+Strict mode is for CI jobs that are expected to have access. It is off by default and can be turned on in three ways:
+
+- Environment variable: `REQUIRE_HF_ACCESS=1`
+- Command-line flag: `pytest --require-hf-access`
+- Ini option: `require_hf_access = true` under `[tool.pytest.ini_options]`
+
+A non-empty `REQUIRE_HF_ACCESS` value wins over the flag, and the flag wins over the ini option. For example, `REQUIRE_HF_ACCESS=0` turns strict mode off even when the ini option is true.
+
+In strict mode:
+
+- A gated-dataset error fails the test instead of being skipped.
+- Collecting `huggingface` tests with `HF_TOKEN` unset or blank stops the run with a usage error.
+- The terminal output ends with a "Hugging Face access denied" section that lists the dataset page to visit for each gated dataset, such as `https://huggingface.co/datasets/<repo_id>`.
+- Gated errors are not rerun, so they fail without the 60 second retry delay. Other errors are still retried twice.
+
+CI tooling can find these failures in the report. Each failed report has a `("hf_access_denied", "<repo_id>")` entry in its `user_properties`, and the value is an empty string when the repo id is unknown. `--report-log` writes it to the JSON lines file under `user_properties`.
+
+The dataset viewer helpers in `pytest_inspect_evals.huggingface` raise the Hub's `GatedRepoError` or `RepositoryNotFoundError` when the viewer API returns a non-200 response. A gated dataset therefore shows up as a Hub error, which strict mode and the default skip handle as described above.
+
 ## Adding your own gate
 
 `skip_if_marker_present` is the function the plugin uses. Call it from your `conftest.py` for repo-specific gates:
