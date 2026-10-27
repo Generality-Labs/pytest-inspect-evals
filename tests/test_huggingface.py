@@ -576,3 +576,95 @@ def test_all_lists_the_structure_helper() -> None:
 
     assert "assert_huggingface_dataset_structure" in huggingface.__all__
     assert "set_hf_call_recorder" in huggingface.__all__
+
+
+def _hub_response(status: int) -> Any:
+    import httpx2
+
+    return httpx2.Response(
+        status,
+        request=httpx2.Request("GET", "https://huggingface.co/api/datasets/org/name"),
+    )
+
+
+def _viewer_session(status: int) -> Any:
+    from unittest.mock import MagicMock
+
+    session = MagicMock()
+    session.get.return_value.status_code = status
+    return session
+
+
+def _call_helper(name: str) -> None:
+    from pytest_inspect_evals import huggingface
+
+    getattr(huggingface, name)("org/name")
+
+
+_VIEWER_HELPERS = ["assert_huggingface_dataset_is_valid", "get_dataset_infos_dict"]
+
+
+@pytest.fixture
+def auth_check(monkeypatch: pytest.MonkeyPatch) -> Any:
+    from unittest.mock import MagicMock
+
+    from pytest_inspect_evals import huggingface
+
+    mock = MagicMock()
+    monkeypatch.setattr(huggingface.HfApi, "auth_check", mock)
+    monkeypatch.setattr(huggingface, "get_session", lambda: _viewer_session(404))
+    return mock
+
+
+@pytest.mark.parametrize("helper", _VIEWER_HELPERS)
+def test_viewer_404_gated_raises_gated_repo_error(helper: str, auth_check: Any) -> None:
+    from huggingface_hub.errors import GatedRepoError
+
+    auth_check.side_effect = GatedRepoError("gated", response=_hub_response(401))
+    with pytest.raises(GatedRepoError):
+        _call_helper(helper)
+
+
+@pytest.mark.parametrize("helper", _VIEWER_HELPERS)
+def test_viewer_404_missing_raises_repository_not_found(helper: str, auth_check: Any) -> None:
+    from huggingface_hub.errors import GatedRepoError, RepositoryNotFoundError
+
+    auth_check.side_effect = RepositoryNotFoundError("missing", response=_hub_response(404))
+    with pytest.raises(RepositoryNotFoundError) as exc_info:
+        _call_helper(helper)
+    assert not isinstance(exc_info.value, GatedRepoError)
+
+
+@pytest.mark.parametrize("helper", _VIEWER_HELPERS)
+def test_viewer_404_auth_check_error_keeps_assertion(helper: str, auth_check: Any) -> None:
+    import requests
+
+    auth_check.side_effect = requests.ConnectionError("offline")
+    with pytest.raises(AssertionError, match="returned status code 404"):
+        _call_helper(helper)
+
+
+@pytest.mark.parametrize("helper", _VIEWER_HELPERS)
+def test_viewer_404_accessible_keeps_assertion(helper: str, auth_check: Any) -> None:
+    auth_check.return_value = None
+    with pytest.raises(AssertionError, match="returned status code 404"):
+        _call_helper(helper)
+    auth_check.assert_called_once()
+
+
+def test_viewer_200_does_not_call_auth_check(
+    auth_check: Any, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pytest_inspect_evals import huggingface
+
+    session = _viewer_session(200)
+    session.get.return_value.json.return_value = {
+        "viewer": True,
+        "preview": True,
+        "search": True,
+        "filter": True,
+        "statistics": True,
+    }
+    monkeypatch.setattr(huggingface, "get_session", lambda: session)
+    huggingface.assert_huggingface_dataset_is_valid("org/name")
+    auth_check.assert_not_called()
