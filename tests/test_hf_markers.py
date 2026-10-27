@@ -278,3 +278,83 @@ def test_strict_gated_errors_not_rerun(
     # Only test_real_failure is rerun. The unmarked test has no flaky marker.
     result.assert_outcomes(failed=4)
     assert result.parseoutcomes()["rerun"] == 2
+
+
+GATED_FIXTURE = """
+import pytest
+
+class GatedRepoError(Exception):
+    repo_id = "org/a"
+
+@pytest.fixture(scope="module")
+def gated_info():
+    raise GatedRepoError("401")
+
+@pytest.mark.huggingface
+def test_first(gated_info):
+    pass
+
+@pytest.mark.huggingface
+def test_second(gated_info):
+    pass
+
+def test_unmarked_still_errors(gated_info):
+    pass
+"""
+
+
+def test_gated_fixture_errors_become_skips(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HF_TOKEN", "dummy")
+    monkeypatch.delenv("REQUIRE_HF_ACCESS", raising=False)
+    pytester.makepyfile(GATED_FIXTURE)
+    result = pytester.runpytest("-p", "no:rerunfailures", "-rs")
+    result.assert_outcomes(skipped=2, errors=1)
+    result.stdout.fnmatch_lines(["*Gated dataset (test_first)*", "*Gated dataset (test_second)*"])
+
+
+def test_strict_gated_fixture_errors_are_tagged(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HF_TOKEN", "dummy")
+    monkeypatch.delenv("REQUIRE_HF_ACCESS", raising=False)
+    pytester.makepyfile(GATED_FIXTURE)
+    reprec = pytester.inline_run("-p", "no:rerunfailures", "--require-hf-access")
+    setup_errors = {
+        report.nodeid.rsplit("::", 1)[1]: report.user_properties
+        for report in reprec.getreports("pytest_runtest_logreport")
+        if report.when == "setup" and report.failed
+    }
+    assert setup_errors == {
+        "test_first": [("hf_access_denied", "org/a")],
+        "test_second": [("hf_access_denied", "org/a")],
+        "test_unmarked_still_errors": [],
+    }
+
+
+def test_strict_gated_fixture_errors_in_summary_under_xdist(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pytest.importorskip("xdist")
+    monkeypatch.setenv("HF_TOKEN", "dummy")
+    monkeypatch.delenv("REQUIRE_HF_ACCESS", raising=False)
+    pytester.makepyfile(GATED_FIXTURE)
+    result = pytester.runpytest("-p", "no:rerunfailures", "--require-hf-access", "-n", "2")
+    result.assert_outcomes(errors=3)
+    result.stdout.fnmatch_lines(
+        ["*= Hugging Face access denied =*", "*https://huggingface.co/datasets/org/a*"]
+    )
+
+
+def test_strict_gated_fixture_errors_not_rerun(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HF_TOKEN", "dummy")
+    monkeypatch.delenv("REQUIRE_HF_ACCESS", raising=False)
+    # Patch time.sleep to avoid the 60 second delay between reruns.
+    monkeypatch.setattr(time, "sleep", lambda seconds: None)
+    pytester.makepyfile(GATED_FIXTURE)
+    result = pytester.runpytest("--require-hf-access")
+    result.assert_outcomes(errors=3)
+    assert result.parseoutcomes().get("rerun", 0) == 0
