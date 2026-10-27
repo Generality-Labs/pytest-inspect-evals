@@ -17,6 +17,7 @@ from pytest_inspect_evals._hf import (
     hf_configure_logging,
     hf_convert_gated_failure_to_skip,
     hf_disable_tokenizer_parallelism,
+    hf_fail_if_token_missing,
 )
 from pytest_inspect_evals._windows import windows_skip_unsupported_tests
 from pytest_inspect_evals.gates import GATES, skip_if_marker_present
@@ -88,6 +89,10 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
         )
     windows_skip_unsupported_tests(items)
     hf_apply_collection_markers(config, items)
+
+
+def pytest_runtest_setup(item: pytest.Item) -> None:
+    hf_fail_if_token_missing(item)
 
 
 @pytest.hookimpl(wrapper=True)

@@ -124,6 +124,20 @@ def test_strict_ini_without_token_errors(
     result.stderr.fnmatch_lines(["*REQUIRE_HF_ACCESS*HF_TOKEN*"])
 
 
+def test_strict_without_token_under_xdist_fails_hf_tests(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pytest.importorskip("xdist")
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+    monkeypatch.setenv("REQUIRE_HF_ACCESS", "1")
+    pytester.makepyfile(HF_TEST + "\n\ndef test_plain():\n    pass\n")
+    result = pytester.runpytest("-n", "2")
+    assert result.ret == pytest.ExitCode.TESTS_FAILED
+    result.assert_outcomes(passed=1, errors=1)
+    result.stdout.fnmatch_lines(["*REQUIRE_HF_ACCESS*HF_TOKEN*"])
+    assert "INTERNALERROR" not in result.stdout.str() + result.stderr.str()
+
+
 def test_strict_env_zero_overrides_flag(
     pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
 ) -> None:
