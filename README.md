@@ -54,8 +54,8 @@ A non-empty `REQUIRE_HF_ACCESS` value wins over the flag, and the flag wins over
 In strict mode:
 
 - A gated-dataset error fails the test instead of being skipped.
-- Collecting `huggingface` tests with `HF_TOKEN` unset or blank stops the run with a usage error.
-- The terminal output ends with a "Hugging Face access denied" section that lists the dataset page to visit for each gated dataset, such as `https://huggingface.co/datasets/<repo_id>`.
+- Collecting `huggingface` tests with `HF_TOKEN` unset or blank stops the run with a usage error. Under pytest-xdist, each `huggingface` test fails at setup with the same message instead, because a usage error on a worker would crash the run.
+- The terminal output ends with a "Hugging Face access denied" section that lists the dataset page to visit for each gated dataset, such as `https://huggingface.co/datasets/<repo_id>`. When the repo id is unknown, it lists the test's node id followed by "(dataset unknown)".
 
 CI tooling can find these failures in the report. Each failed report has a `("hf_access_denied", "<repo_id>")` entry in its `user_properties`, and the value is an empty string when the repo id is unknown. `--report-log` writes it to the JSON lines file under `user_properties`.
 
