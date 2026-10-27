@@ -4,5 +4,5 @@
 
 ### Changed
 
-- Gated-dataset errors on `huggingface` tests are no longer rerun, so they fail or skip without the 60 second retry delay.
-- The Hugging Face dataset viewer helpers raise the Hub's `GatedRepoError` or `RepositoryNotFoundError` when the viewer API returns a non-200 response, where they previously raised an `AssertionError`.
+- Gated-dataset errors on `huggingface` tests are no longer retried in either mode, so they fail or skip without the 60 second retry delay.
+- When the Hugging Face dataset viewer helpers get a non-200 response, they now check access with the Hub. A gated dataset raises `GatedRepoError`, which strict mode fails on and the default mode skips. A missing or private dataset raises `RepositoryNotFoundError`, which is an ordinary failure. Any other non-200 response still raises `AssertionError`.

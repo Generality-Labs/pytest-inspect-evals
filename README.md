@@ -34,7 +34,7 @@ inspect_evals_dataset_download = true
 
 Three more markers have fixed behaviour:
 
-- `huggingface`: skipped when `HF_TOKEN` is unset or blank. Otherwise the test is retried up to twice, 60 seconds apart, and a gated-dataset error (`GatedRepoError`, or `DatasetNotFoundError` mentioning a gated dataset) is reported as a skip.
+- `huggingface`: skipped when `HF_TOKEN` is unset or blank. Otherwise the test is retried up to twice, 60 seconds apart, except for a gated-dataset error (`GatedRepoError`, or `DatasetNotFoundError` mentioning a gated dataset), which is not retried and is reported as a skip. See [Gated Hugging Face datasets and strict mode](#gated-hugging-face-datasets-and-strict-mode) to fail on these errors instead.
 - `docker` and `posix_only`: skipped on Windows.
 
 The plugin registers all seven markers, so they work under `--strict-markers` without any config.
@@ -56,11 +56,12 @@ In strict mode:
 - A gated-dataset error fails the test instead of being skipped.
 - Collecting `huggingface` tests with `HF_TOKEN` unset or blank stops the run with a usage error.
 - The terminal output ends with a "Hugging Face access denied" section that lists the dataset page to visit for each gated dataset, such as `https://huggingface.co/datasets/<repo_id>`.
-- Gated errors are not rerun, so they fail without the 60 second retry delay. Other errors are still retried twice.
 
 CI tooling can find these failures in the report. Each failed report has a `("hf_access_denied", "<repo_id>")` entry in its `user_properties`, and the value is an empty string when the repo id is unknown. `--report-log` writes it to the JSON lines file under `user_properties`.
 
-The dataset viewer helpers in `pytest_inspect_evals.huggingface` raise the Hub's `GatedRepoError` or `RepositoryNotFoundError` when the viewer API returns a non-200 response. A gated dataset therefore shows up as a Hub error, which strict mode and the default skip handle as described above.
+Gated errors are never retried, in either mode. Other errors are still retried twice, 60 seconds apart.
+
+The dataset viewer helpers in `pytest_inspect_evals.huggingface` check access when the viewer API returns a non-200 response. If the dataset is gated, they raise the Hub's `GatedRepoError`, which is handled as described above. If the dataset is missing or private, they raise `RepositoryNotFoundError`, which is an ordinary failure. For any other non-200 response, or if the access check itself fails, they raise an `AssertionError` as before.
 
 ## Adding your own gate
 
