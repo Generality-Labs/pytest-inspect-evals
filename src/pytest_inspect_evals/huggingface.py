@@ -9,8 +9,6 @@ from functools import cache, partial
 from typing import Any, cast, get_args, get_origin
 
 import requests
-from huggingface_hub import HfApi
-from huggingface_hub.errors import GatedRepoError, RepositoryNotFoundError
 from pydantic import BaseModel, ValidationError
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
@@ -21,6 +19,8 @@ try:
     )
     from datasets.features.features import FeatureType
     from datasets.info import DatasetInfo, DatasetInfosDict, asdict
+    from huggingface_hub import HfApi
+    from huggingface_hub.errors import GatedRepoError, RepositoryNotFoundError
 except ImportError as e:
     raise ImportError(
         "pytest_inspect_evals.huggingface needs the huggingface extra: "
