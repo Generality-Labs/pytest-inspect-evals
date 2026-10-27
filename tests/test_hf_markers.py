@@ -57,7 +57,11 @@ def test_marked_flaky_with_hf_token(
     pytester.makepyfile(HF_TEST)
     items, _ = pytester.inline_genitems()
     [flaky] = list(items[0].iter_markers("flaky"))
-    assert flaky.kwargs == {"reruns": 2, "reruns_delay": 60.0}
+    assert flaky.kwargs == {
+        "reruns": 2,
+        "reruns_delay": 60.0,
+        "rerun_except": _hf.GATED_RERUN_EXCEPT,
+    }
 
 
 def test_gated_failures_become_skips(
@@ -138,3 +142,104 @@ def test_strict_without_token_and_no_hf_tests_runs(
     pytester.makepyfile("def test_plain():\n    pass\n")
     result = pytester.runpytest("--require-hf-access")
     result.assert_outcomes(passed=1)
+
+
+class _FakeError(Exception):
+    def __init__(self, msg: str, repo_id: object = None) -> None:
+        super().__init__(msg)
+        if repo_id is not None:
+            self.repo_id = repo_id
+
+
+def test_gated_repo_id_from_attribute() -> None:
+    assert _hf.gated_repo_id(_FakeError("401", repo_id="org/a")) == "org/a"
+
+
+def test_gated_repo_id_from_dataset_not_found_message() -> None:
+    exc = _FakeError("Dataset 'org/b' is a gated dataset on the Hub. Visit https://x for more.")
+    assert _hf.gated_repo_id(exc) == "org/b"
+
+
+def test_gated_repo_id_unknown() -> None:
+    assert _hf.gated_repo_id(_FakeError("401")) is None
+    assert _hf.gated_repo_id(_FakeError("401", repo_id="")) is None
+
+
+def test_strict_gated_failures_fail(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HF_TOKEN", "dummy")
+    monkeypatch.delenv("REQUIRE_HF_ACCESS", raising=False)
+    pytester.makepyfile(GATED_FAILURE)
+    result = pytester.runpytest("-p", "no:rerunfailures", "--require-hf-access")
+    result.assert_outcomes(failed=4)
+    result.stdout.fnmatch_lines(["*Hugging Face access denied*"])
+
+
+def test_strict_gated_error_without_repo_id(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HF_TOKEN", "dummy")
+    monkeypatch.delenv("REQUIRE_HF_ACCESS", raising=False)
+    pytester.makepyfile(GATED_FAILURE)
+    result = pytester.runpytest("-p", "no:rerunfailures", "--require-hf-access")
+    result.stdout.fnmatch_lines(["*test_gated_repo*"])
+    reports = pytester.inline_run("-p", "no:rerunfailures", "--require-hf-access").getreports(
+        "pytest_runtest_logreport"
+    )
+    [report] = [r for r in reports if r.when == "call" and r.nodeid.endswith("test_gated_repo")]
+    assert ("hf_access_denied", "") in report.user_properties
+
+
+GATED_WITH_REPO_ID = """
+import pytest
+
+class GatedRepoError(Exception):
+    repo_id = "org/a"
+
+@pytest.mark.huggingface
+def test_a():
+    raise GatedRepoError("401")
+
+@pytest.mark.huggingface
+def test_b():
+    raise GatedRepoError("401")
+"""
+
+
+def test_strict_summary_lists_terms_urls(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("HF_TOKEN", "dummy")
+    monkeypatch.delenv("REQUIRE_HF_ACCESS", raising=False)
+    pytester.makepyfile(GATED_WITH_REPO_ID)
+    result = pytester.runpytest("-p", "no:rerunfailures", "--require-hf-access")
+    result.assert_outcomes(failed=2)
+    result.stdout.fnmatch_lines(
+        ["*= Hugging Face access denied =*", "*https://huggingface.co/datasets/org/a*"]
+    )
+    assert result.stdout.str().count("https://huggingface.co/datasets/org/a") >= 1
+
+
+def test_strict_summary_under_xdist(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pytest.importorskip("xdist")
+    monkeypatch.setenv("HF_TOKEN", "dummy")
+    monkeypatch.delenv("REQUIRE_HF_ACCESS", raising=False)
+    pytester.makepyfile(GATED_WITH_REPO_ID)
+    result = pytester.runpytest("-p", "no:rerunfailures", "--require-hf-access", "-n", "2")
+    result.assert_outcomes(failed=2)
+    result.stdout.fnmatch_lines(
+        ["*= Hugging Face access denied =*", "*https://huggingface.co/datasets/org/a*"]
+    )
+
+
+def test_gated_errors_not_rerun(pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("HF_TOKEN", "dummy")
+    monkeypatch.delenv("REQUIRE_HF_ACCESS", raising=False)
+    pytester.makeconftest("import time\ntime.sleep = lambda seconds: None\n")
+    pytester.makepyfile(GATED_FAILURE)
+    result = pytester.runpytest()
+    result.assert_outcomes(skipped=2, failed=2)
+    assert result.parseoutcomes()["rerun"] == 2

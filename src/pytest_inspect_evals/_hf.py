@@ -1,6 +1,7 @@
 """Hugging Face handling for tests marked huggingface."""
 
 import os
+import re
 from importlib.util import find_spec
 
 import pytest
@@ -10,6 +11,13 @@ from pytest_inspect_evals.gates import truthy
 REQUIRE_HF_ACCESS_FLAG = "--require-hf-access"
 REQUIRE_HF_ACCESS_ENV = "REQUIRE_HF_ACCESS"
 REQUIRE_HF_ACCESS_INI = "require_hf_access"
+
+HF_ACCESS_DENIED_KEY = "hf_access_denied"
+HF_TERMS_URL = "https://huggingface.co/datasets/{repo_id}"
+_GATED_DATASET_MESSAGE = re.compile(r"Dataset '([^']+)' is a gated dataset", re.IGNORECASE)
+
+# pytest-rerunfailures applies re.search to "<ExceptionType>: <message>".
+GATED_RERUN_EXCEPT = ["GatedRepoError", "(?is)DatasetNotFoundError: .*gated dataset"]
 
 
 def hf_disable_tokenizer_parallelism() -> None:
@@ -59,7 +67,9 @@ def hf_apply_collection_markers(config: pytest.Config, items: list[pytest.Item])
 
     else:
         for item in hf_items:
-            item.add_marker(pytest.mark.flaky(reruns=2, reruns_delay=60.0))
+            item.add_marker(
+                pytest.mark.flaky(reruns=2, reruns_delay=60.0, rerun_except=GATED_RERUN_EXCEPT)
+            )
 
 
 def _is_hf_gated_dataset_failure(
@@ -77,14 +87,37 @@ def _is_hf_gated_dataset_failure(
 def hf_convert_gated_failure_to_skip(
     item: pytest.Item, call: pytest.CallInfo, report: pytest.TestReport
 ) -> None:
-    if _is_hf_gated_dataset_failure(item, call, report):
-        report.outcome = "skipped"
-        line_number = item.reportinfo()[1] or 0
-        report.longrepr = (
-            str(item.fspath),
-            line_number,
-            f"Skipped: Gated dataset ({item.name})",
+    if not _is_hf_gated_dataset_failure(item, call, report):
+        return
+    if hf_access_required(item.config):
+        repo_id = gated_repo_id(call.excinfo.value) or ""  # type: ignore
+        report.user_properties.append((HF_ACCESS_DENIED_KEY, repo_id))
+        what = f"dataset {repo_id}" if repo_id else f"a dataset ({item.name})"
+        hint = (
+            f"accept the terms at {HF_TERMS_URL.format(repo_id=repo_id)}"
+            if repo_id
+            else ("accept the terms on the dataset page")
         )
+        report.sections.append(
+            ("Hugging Face access", f"Hugging Face access denied for {what}: {hint}")
+        )
+        return
+    report.outcome = "skipped"
+    line_number = item.reportinfo()[1] or 0
+    report.longrepr = (
+        str(item.fspath),
+        line_number,
+        f"Skipped: Gated dataset ({item.name})",
+    )
+
+
+def gated_repo_id(exc: BaseException) -> str | None:
+    """Return the repo id of a gated dataset error, or None when it cannot be found."""
+    repo_id = getattr(exc, "repo_id", None)
+    if isinstance(repo_id, str) and repo_id:
+        return repo_id
+    match = _GATED_DATASET_MESSAGE.search(str(exc))
+    return match.group(1) if match else None
 
 
 def is_gated_dataset_exception(exc: BaseException) -> bool:

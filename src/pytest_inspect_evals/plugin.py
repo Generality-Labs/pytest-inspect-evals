@@ -8,6 +8,8 @@ from inspect_ai.model import Model
 from inspect_ai.model._model import init_model_roles  # no public API available
 
 from pytest_inspect_evals._hf import (
+    HF_ACCESS_DENIED_KEY,
+    HF_TERMS_URL,
     REQUIRE_HF_ACCESS_FLAG,
     REQUIRE_HF_ACCESS_INI,
     hf_access_required,
@@ -67,6 +69,7 @@ def pytest_configure(config: pytest.Config) -> None:
         config.addinivalue_line("markers", f"{gate.marker}: {gate.description}")
     for name, description in FIXED_MARKERS:
         config.addinivalue_line("markers", f"{name}: {description}")
+    config.pluginmanager.register(_HfDeniedCollector(), "inspect_evals_hf_denied")
     hf_disable_tokenizer_parallelism()
     hf_configure_logging()
 
@@ -94,6 +97,33 @@ def pytest_runtest_makereport(
     report = yield
     hf_convert_gated_failure_to_skip(item, call, report)
     return report
+
+
+class _HfDeniedCollector:
+    """Collect denied dataset ids from reports and print them in the terminal summary.
+
+    Reports are seen in pytest_runtest_logreport, which also runs on the xdist
+    controller, so datasets denied on workers are included.
+    """
+
+    def __init__(self) -> None:
+        self.denied: dict[str, str] = {}
+
+    def pytest_runtest_logreport(self, report: pytest.TestReport) -> None:
+        for key, repo_id in report.user_properties:
+            if key == HF_ACCESS_DENIED_KEY:
+                self.denied[report.nodeid] = str(repo_id)
+
+    def pytest_terminal_summary(self, terminalreporter: pytest.TerminalReporter) -> None:
+        if not self.denied:
+            return
+        terminalreporter.section("Hugging Face access denied")
+        lines = {
+            HF_TERMS_URL.format(repo_id=repo_id) if repo_id else node_id
+            for node_id, repo_id in self.denied.items()
+        }
+        for line in sorted(lines):
+            terminalreporter.write_line(line)
 
 
 @contextmanager
