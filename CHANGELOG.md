@@ -6,6 +6,12 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 <!-- scriv-insert-here -->
 
+## [0.2.1] - 2026-10-28
+
+### Fixed
+
+- A gated-dataset error raised in a fixture during setup is now handled like one raised in the test body. Without strict mode the test is skipped instead of reported as an error. With `--require-hf-access`, the setup error is tagged `hf_access_denied` and listed in the "Hugging Face access denied" summary, so CI tooling no longer treats it as an ordinary failure.
+
 ## [0.2.0] - 2026-10-27
 
 ### Added
