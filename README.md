@@ -108,6 +108,8 @@ def test_e2e(mock_docker_sandbox):
     assert log.status == "success"
 ```
 
+`isolated_inspect_store` runs for every test without being requested. It gives each test a fresh inspect_ai `Store` and restores the previous one afterwards. Outside of `eval()`, `store()` and `store_as()` use one `Store` for the whole pytest process, so data a test writes there, for example through a `StoreModel`-backed tool, would otherwise reach every later test. inspect_ai copies and compares the active store on every solver step, so that data also slows later tests that run solvers or agents directly. A test that needs data to persist between tests should keep it in its own fixture instead.
+
 ## Helpers
 
 - `pytest_inspect_evals.assertions`: `assert_task_structure`, `assert_eval_success`, `run_single_sample_eval`, `get_metric_value`.
@@ -128,7 +130,7 @@ If you keep the options, pytest stops at startup with `argparse.ArgumentError: a
 
 ## Private inspect_ai APIs
 
-Two fixtures use inspect_ai internals that have no public equivalent: `set_model_roles` calls `inspect_ai.model._model.init_model_roles`, and `mock_docker_sandbox` patches `inspect_ai.util._sandbox.docker.docker.DockerSandboxEnvironment`. A future inspect_ai release could break them.
+Three fixtures use inspect_ai internals that have no public equivalent: `set_model_roles` calls `inspect_ai.model._model.init_model_roles`, `isolated_inspect_store` calls `inspect_ai.util._store.init_subtask_store`, and `mock_docker_sandbox` patches `inspect_ai.util._sandbox.docker.docker.DockerSandboxEnvironment`. A future inspect_ai release could break them.
 
 ## Development
 
