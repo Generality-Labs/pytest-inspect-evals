@@ -6,6 +6,8 @@ from contextlib import AbstractContextManager, contextmanager
 import pytest
 from inspect_ai.model import Model
 from inspect_ai.model._model import init_model_roles  # no public API available
+from inspect_ai.util import Store, store
+from inspect_ai.util._store import init_subtask_store  # no public API available
 
 from pytest_inspect_evals._hf import (
     HF_ACCESS_DENIED_KEY,
@@ -23,7 +25,13 @@ from pytest_inspect_evals._windows import windows_skip_unsupported_tests
 from pytest_inspect_evals.gates import GATES, skip_if_marker_present
 from pytest_inspect_evals.sandbox import mock_docker_sandbox
 
-__all__ = ["hf_access_required", "mock_docker_sandbox", "model_roles", "set_model_roles"]
+__all__ = [
+    "hf_access_required",
+    "isolated_inspect_store",
+    "mock_docker_sandbox",
+    "model_roles",
+    "set_model_roles",
+]
 
 FIXED_MARKERS: tuple[tuple[str, str], ...] = (
     (
@@ -162,3 +170,22 @@ def set_model_roles() -> Callable[..., AbstractContextManager[None]]:
                 score = scorer_fn(state, target)
     """
     return model_roles
+
+
+@pytest.fixture(autouse=True)
+def isolated_inspect_store() -> Iterator[None]:
+    """Give every test its own inspect_ai `Store`.
+
+    Outside of `eval()`, `store()` and `store_as()` resolve to a single
+    process-global default `Store`, so anything a test writes there (for example
+    a `StoreModel`-backed tool database) is still present for every later test in
+    the same pytest process. inspect_ai snapshots and diffs the active store on
+    every solver step, so leaked data also slows down every later test that runs
+    a solver chain or agent directly.
+    """
+    previous = store()
+    init_subtask_store(Store())
+    try:
+        yield
+    finally:
+        init_subtask_store(previous)
