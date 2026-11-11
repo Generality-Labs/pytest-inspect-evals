@@ -13,6 +13,7 @@ REQUIRE_HF_ACCESS_ENV = "REQUIRE_HF_ACCESS"
 REQUIRE_HF_ACCESS_INI = "require_hf_access"
 
 HF_ACCESS_DENIED_KEY = "hf_access_denied"
+HF_NO_TOKEN_KEY = "hf_no_token"
 HF_TERMS_URL = "https://huggingface.co/datasets/{repo_id}"
 _GATED_DATASET_MESSAGE = re.compile(r"Dataset '([^']+)' is a gated dataset", re.IGNORECASE)
 
@@ -51,35 +52,35 @@ def hf_access_required(config: pytest.Config) -> bool:
     return bool(config.getini(REQUIRE_HF_ACCESS_INI))
 
 
+def hf_token_set() -> bool:
+    return bool(os.environ.get("HF_TOKEN", "").strip())
+
+
 def hf_apply_collection_markers(config: pytest.Config, items: list[pytest.Item]) -> None:
     hf_items = [item for item in items if item.get_closest_marker("huggingface") is not None]
 
     if not hf_items:
         return
 
-    if not os.environ.get("HF_TOKEN", "").strip():
-        if hf_access_required(config):
-            message = (
-                f"Strict Hugging Face mode is on ({REQUIRE_HF_ACCESS_FLAG}, "
-                f"{REQUIRE_HF_ACCESS_ENV}=1 or {REQUIRE_HF_ACCESS_INI} = true) and "
-                f"{len(hf_items)} huggingface test(s) were collected, but HF_TOKEN is "
-                "not set. Set HF_TOKEN, or turn strict mode off."
-            )
-            # A UsageError raised on an xdist worker crashes the controller with an
-            # INTERNALERROR that hides this message, so workers fail each test instead.
-            if not hasattr(config, "workerinput"):
-                raise pytest.UsageError(message)
-            for item in hf_items:
-                item.stash[_MISSING_TOKEN_MESSAGE] = message
-            return
+    if not hf_token_set() and hf_access_required(config):
+        message = (
+            f"Strict Hugging Face mode is on ({REQUIRE_HF_ACCESS_FLAG}, "
+            f"{REQUIRE_HF_ACCESS_ENV}=1 or {REQUIRE_HF_ACCESS_INI} = true) and "
+            f"{len(hf_items)} huggingface test(s) were collected, but HF_TOKEN is "
+            "not set. Set HF_TOKEN, or turn strict mode off."
+        )
+        # A UsageError raised on an xdist worker crashes the controller with an
+        # INTERNALERROR that hides this message, so workers fail each test instead.
+        if not hasattr(config, "workerinput"):
+            raise pytest.UsageError(message)
         for item in hf_items:
-            item.add_marker(pytest.mark.skip(reason=f"HF_TOKEN not set ({item.name})"))
+            item.stash[_MISSING_TOKEN_MESSAGE] = message
+        return
 
-    else:
-        for item in hf_items:
-            item.add_marker(
-                pytest.mark.flaky(reruns=2, reruns_delay=60.0, rerun_except=GATED_RERUN_EXCEPT)
-            )
+    for item in hf_items:
+        item.add_marker(
+            pytest.mark.flaky(reruns=2, reruns_delay=60.0, rerun_except=GATED_RERUN_EXCEPT)
+        )
 
 
 def hf_fail_if_token_missing(item: pytest.Item) -> None:
@@ -90,6 +91,24 @@ def hf_fail_if_token_missing(item: pytest.Item) -> None:
     message = item.stash.get(_MISSING_TOKEN_MESSAGE, None)
     if message is not None:
         pytest.fail(message, pytrace=False)
+
+
+def hf_tag_run_without_token(item: pytest.Item, report: pytest.TestReport) -> None:
+    """Tag the setup report of a huggingface test that runs while HF_TOKEN is unset.
+
+    The terminal summary counts these tags. A Python warning at collection would
+    count tests that `-m` deselects or a gate skips, would repeat on every xdist
+    worker, and would stop the run where warnings are errors.
+    """
+    if (
+        report.when == "setup"
+        and not report.skipped
+        and item.get_closest_marker("huggingface") is not None
+        and not hf_token_set()
+        # In strict mode a missing token fails the test before it runs.
+        and not hf_access_required(item.config)
+    ):
+        report.user_properties.append((HF_NO_TOKEN_KEY, ""))
 
 
 def _is_hf_gated_dataset_failure(
