@@ -38,24 +38,113 @@ def test_unmarked_gated_error_still_fails():
 """
 
 
-@pytest.mark.parametrize("token", [None, "", "   "])
-def test_skipped_without_hf_token(
-    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch, token: str | None
-) -> None:
+def _set_token(monkeypatch: pytest.MonkeyPatch, token: str | None) -> None:
     if token is None:
         monkeypatch.delenv("HF_TOKEN", raising=False)
     else:
         monkeypatch.setenv("HF_TOKEN", token)
+
+
+NO_TOKEN_NOTICE = "HF_TOKEN is not set"
+
+
+@pytest.mark.parametrize("token", [None, "", "   "])
+def test_runs_with_a_notice_without_hf_token(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch, token: str | None
+) -> None:
+    _set_token(monkeypatch, token)
     pytester.makepyfile(HF_TEST)
-    result = pytester.runpytest("-rs")
-    result.assert_outcomes(skipped=1)
-    result.stdout.fnmatch_lines(["*HF_TOKEN not set*"])
+    result = pytester.runpytest()
+    result.assert_outcomes(passed=1)
+    result.stdout.fnmatch_lines(
+        [
+            "*= Hugging Face token =*",
+            "HF_TOKEN is not set: 1 huggingface test(s) ran without authentication.*",
+        ]
+    )
 
 
-def test_marked_flaky_with_hf_token(
+def test_notice_counts_the_tests_that_ran_without_hf_token(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+    pytester.makepyfile(HF_TEST + "\n\n@pytest.mark.huggingface\ndef test_hf_too():\n    pass\n")
+    result = pytester.runpytest()
+    result.assert_outcomes(passed=2)
+    result.stdout.fnmatch_lines(["HF_TOKEN is not set: 2 huggingface test(s) ran*"])
+
+
+def test_one_notice_under_xdist_without_hf_token(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    pytest.importorskip("xdist")
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+    pytester.makepyfile(HF_TEST + "\n\n@pytest.mark.huggingface\ndef test_hf_too():\n    pass\n")
+    result = pytester.runpytest("-n", "2")
+    result.assert_outcomes(passed=2)
+    result.stdout.fnmatch_lines(["HF_TOKEN is not set: 2 huggingface test(s) ran*"])
+    assert result.stdout.str().count(NO_TOKEN_NOTICE) == 1
+
+
+def test_runs_without_hf_token_when_warnings_are_errors(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+    pytester.makepyfile(HF_TEST)
+    result = pytester.runpytest("-W", "error")
+    result.assert_outcomes(passed=1)
+    result.stdout.fnmatch_lines(["HF_TOKEN is not set: 1 huggingface test(s) ran*"])
+
+
+def test_report_is_tagged_without_hf_token(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+    pytester.makepyfile(HF_TEST + "\n\ndef test_plain():\n    pass\n")
+    reports = pytester.inline_run().getreports("pytest_runtest_logreport")
+    tagged = {r.nodeid.rsplit("::", 1)[1]: r.user_properties for r in reports if r.when == "setup"}
+    assert tagged == {"test_hf": [("hf_no_token", "")], "test_plain": []}
+
+
+def test_no_notice_with_hf_token(
     pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     monkeypatch.setenv("HF_TOKEN", "dummy")
+    pytester.makepyfile(HF_TEST)
+    result = pytester.runpytest()
+    result.assert_outcomes(passed=1)
+    result.stdout.no_fnmatch_line(f"*{NO_TOKEN_NOTICE}*")
+
+
+def test_no_notice_when_huggingface_tests_are_deselected(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+    pytester.makepyfile(HF_TEST + "\n\ndef test_plain():\n    pass\n")
+    result = pytester.runpytest("-m", "not huggingface")
+    result.assert_outcomes(passed=1, deselected=1)
+    result.stdout.no_fnmatch_line(f"*{NO_TOKEN_NOTICE}*")
+
+
+def test_no_notice_when_a_gate_skips_the_huggingface_tests(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+    monkeypatch.delenv("RUN_DATASET_DOWNLOAD_TESTS", raising=False)
+    pytester.makepyfile(
+        "import pytest\n\n@pytest.mark.huggingface\n@pytest.mark.dataset_download\n"
+        "def test_hf_download():\n    pass\n"
+    )
+    result = pytester.runpytest()
+    result.assert_outcomes(skipped=1)
+    result.stdout.no_fnmatch_line(f"*{NO_TOKEN_NOTICE}*")
+
+
+@pytest.mark.parametrize("token", [None, "dummy"])
+def test_marked_flaky_with_and_without_hf_token(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch, token: str | None
+) -> None:
+    _set_token(monkeypatch, token)
     pytester.makepyfile(HF_TEST)
     items, _ = pytester.inline_genitems()
     [flaky] = list(items[0].iter_markers("flaky"))
@@ -78,6 +167,19 @@ def test_gated_failures_become_skips(
     )
 
 
+def test_gated_failures_become_skips_without_hf_token(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+    monkeypatch.delenv("REQUIRE_HF_ACCESS", raising=False)
+    pytester.makepyfile(GATED_FAILURE)
+    result = pytester.runpytest("-p", "no:rerunfailures", "-rs")
+    result.assert_outcomes(skipped=2, failed=2)
+    result.stdout.fnmatch_lines(
+        ["*Gated dataset (test_gated_repo)*", "*Gated dataset (test_gated_dataset)*"]
+    )
+
+
 def test_hf_logging_is_a_no_op_without_datasets(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(_hf, "find_spec", lambda name: None)
     _hf.hf_configure_logging()
@@ -89,7 +191,7 @@ def test_plugin_loads_without_datasets(
     monkeypatch.setattr(_hf, "find_spec", lambda name: None)
     monkeypatch.delenv("HF_TOKEN", raising=False)
     pytester.makepyfile(HF_TEST)
-    pytester.runpytest().assert_outcomes(skipped=1)
+    pytester.runpytest().assert_outcomes(passed=1)
 
 
 def test_strict_without_token_errors(
@@ -138,6 +240,7 @@ def test_strict_without_token_under_xdist_fails_hf_tests(
     result.assert_outcomes(passed=1, errors=1)
     result.stdout.fnmatch_lines(["*REQUIRE_HF_ACCESS*HF_TOKEN*"])
     assert "INTERNALERROR" not in result.stdout.str() + result.stderr.str()
+    result.stdout.no_fnmatch_line("*ran without authentication*")
 
 
 def test_strict_env_zero_overrides_flag(
@@ -147,7 +250,7 @@ def test_strict_env_zero_overrides_flag(
     monkeypatch.setenv("REQUIRE_HF_ACCESS", "0")
     pytester.makepyfile(HF_TEST)
     result = pytester.runpytest("--require-hf-access")
-    result.assert_outcomes(skipped=1)
+    result.assert_outcomes(passed=1)
 
 
 def test_strict_without_token_and_no_hf_tests_runs(
@@ -312,6 +415,17 @@ def test_gated_fixture_errors_become_skips(
     result = pytester.runpytest("-p", "no:rerunfailures", "-rs")
     result.assert_outcomes(skipped=2, errors=1)
     result.stdout.fnmatch_lines(["*Gated dataset (test_first)*", "*Gated dataset (test_second)*"])
+
+
+def test_gated_fixture_errors_without_hf_token_are_in_the_notice(
+    pytester: pytest.Pytester, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.delenv("HF_TOKEN", raising=False)
+    monkeypatch.delenv("REQUIRE_HF_ACCESS", raising=False)
+    pytester.makepyfile(GATED_FIXTURE)
+    result = pytester.runpytest("-p", "no:rerunfailures", "-rs")
+    result.assert_outcomes(skipped=2, errors=1)
+    result.stdout.fnmatch_lines(["HF_TOKEN is not set: 2 huggingface test(s) ran*"])
 
 
 def test_strict_gated_fixture_errors_are_tagged(

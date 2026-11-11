@@ -1,0 +1,3 @@
+### Changed
+
+- A `huggingface` test now runs when `HF_TOKEN` is unset or blank. Before this release it was skipped. The terminal summary gains a "Hugging Face token" section that counts the tests that ran without a token, and each of those tests has an `("hf_no_token", "")` entry in the `user_properties` of its setup report. A gated-dataset error is still reported as a skip, and strict mode (`--require-hf-access`) still stops the run when the token is missing. After you upgrade, a run without `HF_TOKEN` makes Hub requests that it did not make before, for example in a CI job for a pull request from a fork. To keep a test behind a gate, mark it `dataset_download` as well.

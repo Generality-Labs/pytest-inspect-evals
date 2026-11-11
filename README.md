@@ -34,14 +34,23 @@ inspect_evals_dataset_download = true
 
 Three more markers have fixed behaviour:
 
-- `huggingface`: skipped when `HF_TOKEN` is unset or blank. Otherwise the test is retried up to twice, 60 seconds apart, except for a gated-dataset error (`GatedRepoError`, or `DatasetNotFoundError` mentioning a gated dataset), which is not retried and is reported as a skip. See [Gated Hugging Face datasets and strict mode](#gated-hugging-face-datasets-and-strict-mode) to fail on these errors instead.
+- `huggingface`: the test is retried up to twice, 60 seconds apart, except for a gated-dataset error (`GatedRepoError`, or `DatasetNotFoundError` mentioning a gated dataset), which is not retried and is reported as a skip. The test also runs when `HF_TOKEN` is unset or blank, and the terminal summary then says how many `huggingface` tests ran without a token. See [Gated Hugging Face datasets and strict mode](#gated-hugging-face-datasets-and-strict-mode) to fail on a gated-dataset error or a missing token instead.
 - `docker` and `posix_only`: skipped on Windows.
 
 The plugin registers all seven markers, so they work under `--strict-markers` without any config.
 
 ## Gated Hugging Face datasets and strict mode
 
-By default, a `huggingface` test is skipped when `HF_TOKEN` is unset, and a gated-dataset error is reported as a skip. This keeps local runs green for contributors who have not accepted a dataset's terms. This applies whether the error is raised in the test body or in a fixture during setup, for example a module-scoped fixture that fetches dataset info.
+By default, a gated-dataset error in a `huggingface` test is reported as a skip. This keeps local runs green for contributors who have not accepted a dataset's terms. This applies whether the error is raised in the test body or in a fixture during setup, for example a module-scoped fixture that fetches dataset info.
+
+A `huggingface` test also runs when `HF_TOKEN` is unset or blank, so tests of public datasets pass without a token. The terminal output then ends with a "Hugging Face token" section:
+
+```text
+============================== Hugging Face token ==============================
+HF_TOKEN is not set: 3 huggingface test(s) ran without authentication. A gated-dataset error is reported as a skip, a test that needs a private dataset fails, and the Hub applies lower rate limits to requests without a token.
+```
+
+The count covers the tests that started. It leaves out tests that `-m` or `-k` deselected and tests that a gate skipped. Each counted test has an `("hf_no_token", "")` entry in the `user_properties` of its setup report. Without a token the Hub reports a private dataset as missing, so a test that needs one fails after its two retries.
 
 Strict mode is for CI jobs that are expected to have access. It is off by default and can be turned on in three ways:
 
@@ -54,7 +63,7 @@ A non-empty `REQUIRE_HF_ACCESS` value wins over the flag, and the flag wins over
 In strict mode:
 
 - A gated-dataset error fails the test instead of being skipped. An error raised in a fixture is reported as a setup error, with the same tag and summary entry.
-- Collecting `huggingface` tests with `HF_TOKEN` unset or blank stops the run with a usage error. Under pytest-xdist, each `huggingface` test fails at setup with the same message instead, because a usage error on a worker would crash the run.
+- Collecting `huggingface` tests with `HF_TOKEN` unset or blank stops the run with a usage error, where the default mode runs them. Under pytest-xdist, each `huggingface` test fails at setup with the same message instead, because a usage error on a worker would crash the run.
 - The terminal output ends with a "Hugging Face access denied" section that lists the dataset page to visit for each gated dataset, such as `https://huggingface.co/datasets/<repo_id>`. When the repo id is unknown, it lists the test's node id followed by "(dataset unknown)".
 
 CI tooling can find these failures in the report. Each failed report has a `("hf_access_denied", "<repo_id>")` entry in its `user_properties`, and the value is an empty string when the repo id is unknown. `--report-log` writes it to the JSON lines file under `user_properties`.

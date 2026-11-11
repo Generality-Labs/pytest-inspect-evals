@@ -11,6 +11,7 @@ from inspect_ai.util._store import init_subtask_store  # no public API available
 
 from pytest_inspect_evals._hf import (
     HF_ACCESS_DENIED_KEY,
+    HF_NO_TOKEN_KEY,
     HF_TERMS_URL,
     REQUIRE_HF_ACCESS_FLAG,
     REQUIRE_HF_ACCESS_INI,
@@ -20,6 +21,7 @@ from pytest_inspect_evals._hf import (
     hf_convert_gated_failure_to_skip,
     hf_disable_tokenizer_parallelism,
     hf_fail_if_token_missing,
+    hf_tag_run_without_token,
 )
 from pytest_inspect_evals._windows import windows_skip_unsupported_tests
 from pytest_inspect_evals.gates import GATES, skip_if_marker_present
@@ -36,8 +38,8 @@ __all__ = [
 FIXED_MARKERS: tuple[tuple[str, str], ...] = (
     (
         "huggingface",
-        "marks tests that use the Hugging Face Hub; skipped without HF_TOKEN, otherwise "
-        "retried twice; strict mode (--require-hf-access) fails them instead of skipping",
+        "marks tests that use the Hugging Face Hub; retried twice; without HF_TOKEN they run "
+        "with a notice in the summary, or fail in strict mode (--require-hf-access)",
     ),
     ("docker", "marks tests that pull or build docker images; skipped on Windows"),
     ("posix_only", "marks tests that require POSIX systems (Linux/macOS); skipped on Windows"),
@@ -79,7 +81,7 @@ def pytest_configure(config: pytest.Config) -> None:
         config.addinivalue_line("markers", f"{gate.marker}: {gate.description}")
     for name, description in FIXED_MARKERS:
         config.addinivalue_line("markers", f"{name}: {description}")
-    config.pluginmanager.register(_HfDeniedCollector(), "inspect_evals_hf_denied")
+    config.pluginmanager.register(_HfSummary(), "inspect_evals_hf_summary")
     hf_disable_tokenizer_parallelism()
     hf_configure_logging()
 
@@ -109,26 +111,40 @@ def pytest_runtest_makereport(
     item: pytest.Item, call: pytest.CallInfo[None]
 ) -> Generator[None, pytest.TestReport, pytest.TestReport]:
     report = yield
+    # Tag first: a gated-dataset error in a fixture turns the setup report into a skip.
+    hf_tag_run_without_token(item, report)
     hf_convert_gated_failure_to_skip(item, call, report)
     return report
 
 
-class _HfDeniedCollector:
-    """Collect denied dataset ids from reports and print them in the terminal summary.
+class _HfSummary:
+    """Print the Hugging Face sections of the terminal summary.
 
     Reports are seen in pytest_runtest_logreport, which also runs on the xdist
-    controller, so datasets denied on workers are included.
+    controller, so tests that ran on workers are included.
     """
 
     def __init__(self) -> None:
         self.denied: dict[str, str] = {}
+        self.ran_without_token: set[str] = set()
 
     def pytest_runtest_logreport(self, report: pytest.TestReport) -> None:
-        for key, repo_id in report.user_properties:
+        for key, value in report.user_properties:
             if key == HF_ACCESS_DENIED_KEY:
-                self.denied[report.nodeid] = str(repo_id)
+                self.denied[report.nodeid] = str(value)
+            elif key == HF_NO_TOKEN_KEY:
+                self.ran_without_token.add(report.nodeid)
 
     def pytest_terminal_summary(self, terminalreporter: pytest.TerminalReporter) -> None:
+        if self.ran_without_token:
+            terminalreporter.section("Hugging Face token", yellow=True)
+            terminalreporter.write_line(
+                f"HF_TOKEN is not set: {len(self.ran_without_token)} huggingface test(s) ran "
+                "without authentication. A gated-dataset error is reported as a skip, a test "
+                "that needs a private dataset fails, and the Hub applies lower rate limits to "
+                "requests without a token.",
+                yellow=True,
+            )
         if not self.denied:
             return
         terminalreporter.section("Hugging Face access denied")
